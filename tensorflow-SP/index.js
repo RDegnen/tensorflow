@@ -20,12 +20,14 @@ const computeSMA = (data, windowSize) => {
   const closingPrices = []
 
   chunks.forEach(chunk => {
+    let date
     const average = chunk.reduce((acc, current) => {
       const close = parseFloat(current.Close)
       closingPrices.push(close)
+      date = current.Date
       return acc + close
     }, 0) / windowSize
-    averages.push(average)
+    averages.push({ average, date })
   })
   
   return {
@@ -36,20 +38,37 @@ const computeSMA = (data, windowSize) => {
 
 const run = async () => {
   const data = await loadData()
-  const { averages, closingPrices } = computeSMA(data, 50)
-  
-  const values = averages.map((avg, i) => ({
-    y: avg,
-    x: closingPrices[i]
+  const { averages, closingPrices } = computeSMA(data, 14)
+
+  const avgValues = averages.map((avg, i) => ({
+    y: avg.average,
+    x: new Date(avg.date)
   }))
 
-  tfvis.render.scatterplot(
+  const values = data.map(d => ({
+    x: new Date(d.Date),
+    y: parseFloat(d.Close),
+  }))
+  
+  tfvis.render.linechart(
     { name: 'S&P' },
     { values },
     {
-      xLabel: 'Historical Closing Prices',
-      yLabel: 'Average',
-      height: 300,
+      xLabel: 'Timestamp',
+      yLabel: 'Closing Prices',
+      height: 500,
+      width: 1000,
+    }
+  )
+
+  tfvis.render.linechart(
+    { name: 'S&P 14 week SMA' },
+    { values: avgValues },
+    {
+      xLabel: 'Timestamp',
+      yLabel: 'Closing Averages',
+      height: 500,
+      width: 1000,
     }
   )
 }
