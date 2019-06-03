@@ -1,0 +1,9 @@
+{
+  "name": "tenserflow-node",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^1.1.2"
+  }
+}
