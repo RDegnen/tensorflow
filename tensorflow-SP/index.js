@@ -20,14 +20,12 @@ const computeSMA = (data, windowSize) => {
   const closingPrices = []
 
   chunks.forEach(chunk => {
-    let date
     const average = chunk.reduce((acc, current) => {
       const close = parseFloat(current.Close)
       closingPrices.push(close)
-      date = current.Date
       return acc + close
     }, 0) / windowSize
-    averages.push({ average, date })
+    averages.push(average)
   })
   
   return {
@@ -37,35 +35,25 @@ const computeSMA = (data, windowSize) => {
 }
 
 const run = async () => {
+  const windowSize = 14
   const data = await loadData()
-  const { averages, closingPrices } = computeSMA(data, 14)
+  const { averages, closingPrices } = computeSMA(data, windowSize)
+  let day = 0
 
-  const avgValues = averages.map((avg, i) => ({
-    y: avg.average,
-    x: new Date(avg.date)
-  }))
-
-  // const values = data.map(d => ({
-  //   x: new Date(d.Date),
-  //   y: parseFloat(d.Close),
-  // }))
-  
-  // tfvis.render.linechart(
-  //   { name: 'S&P' },
-  //   { values },
-  //   {
-  //     xLabel: 'Timestamp',
-  //     yLabel: 'Closing Prices',
-  //     height: 500,
-  //     width: 1000,
-  //   }
-  // )
+  const values = averages.map(d => {
+    const val = {
+      x: day,
+      y: parseFloat(d.average),
+    }
+    day += windowSize
+    return val
+  })
 
   tfvis.render.linechart(
     { name: 'S&P 14 week SMA' },
-    { values: avgValues },
+    { values },
     {
-      xLabel: 'Timestamp',
+      xLabel: 'Day',
       yLabel: 'Closing Averages',
       height: 500,
       width: 1000,
@@ -74,68 +62,75 @@ const run = async () => {
 
   const model = createModel()
   tfvis.show.modelSummary({ name: 'Model Summary' }, model)
-
-  const tensorData = convertToTensor(averages)
-  const { inputs, labels } = tensorData
   
-  await trainModel(model, inputs, labels)
+  const trainingData = averages.map((val, i) => ({
+    value: val,
+    closingPrices: closingPrices[i]
+  }))
 
-  testModel(model, averages, tensorData)
+  const tensorData = convertToTensor(trainingData, windowSize)
+  const { xs, ys } = tensorData
+
+  await trainModel(model, xs, ys)
+
+  testModel(model, values, tensorData, windowSize)
 }
 
 const createModel =() => {
   const model = tf.sequential()
-
-  model.add(tf.layers.dense({ inputShape: [1], units: 20, useBias: true }))
+  // Closing prices should be in the input and an expected average for that perioud should be the output
+  model.add(tf.layers.dense({ inputShape: [14], units: 20, useBias: true }))
   model.add(tf.layers.dense({ units: 30, activation: 'sigmoid' }))
-  model.add(tf.layers.dense({ units: 40, activation: 'sigmoid' }))
-  model.add(tf.layers.dense({ units: 40, activation: 'sigmoid' }))
-  model.add(tf.layers.dense({ units: 50, activation: 'sigmoid' }))
   model.add(tf.layers.dense({ units: 1, useBias: true }))
 
   return model
 }
 
-const convertToTensor = data => 
+const convertToTensor = (data, windowSize) => 
   tf.tidy(() => {
     tf.util.shuffle(data)
 
-    const inputs = data.map(d => new Date(d.date))
-    const labels = data.map(d => d.average)
+    const xs = data
+      .map(d => d.closingPrices)
+      .filter(cps => cps.length === windowSize)
+    
+    const ys = data
+      .filter(d => d.closingPrices.length === windowSize)
+      .map(d => d.value)
+    
+    const xsTensor = tf.tensor2d(xs, [xs.length, xs[0].length])
+    const ysTensor = tf.tensor2d(ys, [ys.length, 1])
+    
+    const xsMax = xsTensor.max()
+    const xsMin = xsTensor.min()
+    const ysMax = ysTensor.max()
+    const ysMin = ysTensor.min()
 
-    const inputTensor = tf.tensor2d(inputs, [inputs.length, 1])
-    const labelTensor = tf.tensor2d(labels, [labels.length, 1])
-
-    const inputMax = inputTensor.max()
-    const inputMin = inputTensor.min()
-    const labelMax = labelTensor.max()
-    const labelMin = labelTensor.min()
-
-    const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin))
-    const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin))
+    const normalizedXS = xsTensor.sub(xsMin).div(xsMax.sub(xsMin))
+    const normalizedYS = ysTensor.sub(ysMin).div(ysMax.sub(ysMin))
 
     return {
-      inputs: normalizedInputs,
-      labels: normalizedLabels,
+      xs: normalizedXS,
+      ys: normalizedYS,
       
-      inputMax,
-      inputMin,
-      labelMax,
-      labelMin,
+      xsMax,
+      xsMin,
+      ysMax,
+      ysMin,
     }
   })
 
-const trainModel = async (model, inputs, labels) => {
+const trainModel = async (model, inputs, outputs) => {
   model.compile({
-    optimizer: tf.train.adam(),
+    optimizer: tf.train.adam(0.05),
     loss: tf.losses.meanSquaredError,
     metrics: ['mse'],
   })
 
   const batchSize = 32
-  const epochs = 100
+  const epochs = 25
 
-  return await model.fit(inputs, labels, {
+  return await model.fit(inputs, outputs, {
     batchSize,
     epochs,
     shuffle: true,
@@ -147,12 +142,13 @@ const trainModel = async (model, inputs, labels) => {
   })
 }
 
-function testModel(model, inputData, normalizationData) {
+function testModel(model, originalData, normalizationData, windowSize) {
   const { inputMax, inputMin, labelMin, labelMax } = normalizationData
+  let day = 0
 
   const [xs, preds] = tf.tidy(() => {
-    const xs = tf.linspace(0, 1, 90)
-    const preds = model.predict(xs.reshape([90, 1]))
+    const xs = tf.linspace(0, 1, 14)
+    const preds = model.predict(xs.reshape([14]))
 
     const unNormXs = xs
       .mul(inputMax.sub(inputMin))
@@ -165,19 +161,20 @@ function testModel(model, inputData, normalizationData) {
     return [unNormXs.dataSync(), unNormPreds.dataSync()]
   })
 
-  const predictedPoints = Array.from(xs).map((val, i) => {
-    return {x: val, y: preds[i]}
+  const predictedPoints = Array.from(xs).map((_, i) => {
+    const returnValue = {
+      x: day, 
+      y: preds[i]
+    }
+    day += windowSize
+    return returnValue
   })
-  
-  const originalPoints = inputData.map(d => ({
-    x: new Date(d.date), y: d.average,
-  }))
 
   tfvis.render.linechart(
     { name: 'Model Predictions vs Original Data' }, 
-    { values: [originalPoints, predictedPoints], series: ['original', 'predicted'] }, 
+    { values: [originalData, predictedPoints], series: ['original', 'predicted'] }, 
     {
-      xLabel: 'Timestamp',
+      xLabel: 'Day',
       yLabel: 'Average',
       height: 500,
       width: 1000,

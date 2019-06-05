@@ -10,7 +10,7 @@ app.listen(PORT, () => console.log(`Listening on ${PORT}`))
 
 const loadData = async () =>
   new Promise(resolve => {
-    fs.readFile('./5-years.json', (err, data) => {
+    fs.readFile('./data.json', (err, data) => {
       if (err) throw err
       resolve(JSON.parse(data))
     })
