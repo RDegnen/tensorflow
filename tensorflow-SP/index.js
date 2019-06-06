@@ -43,7 +43,7 @@ const run = async () => {
   const values = averages.map(d => {
     const val = {
       x: day,
-      y: parseFloat(d.average),
+      y: d,
     }
     day += windowSize
     return val
@@ -142,29 +142,42 @@ const trainModel = async (model, inputs, outputs) => {
   })
 }
 
+function generateInputs() {
+  const inputs = []
+  for (let i = 0; i < 269; i++) {
+    const inputsArr = []
+    for (let i = 0; i < 14; i++) {
+      inputsArr.push(Math.random())
+    }
+    inputs.push(inputsArr)
+  }
+  return inputs
+}
+
 function testModel(model, originalData, normalizationData, windowSize) {
-  const { inputMax, inputMin, labelMin, labelMax } = normalizationData
+  const { xsMax, xsMin, ysMin, ysMax } = normalizationData
   let day = 0
 
-  const [xs, preds] = tf.tidy(() => {
-    const xs = tf.linspace(0, 1, 14)
-    const preds = model.predict(xs.reshape([14]))
-
+  const [preds] = tf.tidy(() => {
+    const xs = tf.tensor2d(generateInputs())
+    
+    const preds = model.predict(xs)
+    
     const unNormXs = xs
-      .mul(inputMax.sub(inputMin))
-      .add(inputMin)
+      .mul(xsMax.sub(xsMin))
+      .add(xsMin)
 
     const unNormPreds = preds
-      .mul(labelMax.sub(labelMin))
-      .add(labelMin)
+      .mul(ysMax.sub(ysMin))
+      .add(ysMin)
 
     return [unNormXs.dataSync(), unNormPreds.dataSync()]
   })
-
-  const predictedPoints = Array.from(xs).map((_, i) => {
+  
+  const predictedPoints = Array.from(preds).map(val => {
     const returnValue = {
       x: day, 
-      y: preds[i]
+      y: val
     }
     day += windowSize
     return returnValue
