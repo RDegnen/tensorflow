@@ -38,14 +38,19 @@ const run = async () => {
   const windowSize = 14
   const data = await loadData()
   const { averages, closingPrices } = computeSMA(data, windowSize)
+  const trainingLength = arr => arr.length * .7
   let day = 0
+  let testDayStart = null
 
-  const values = averages.map(d => {
+  const values = averages.map((d,i) => {
     const val = {
       x: day,
       y: d,
     }
     day += windowSize
+    if (i === trainingLength(averages) - 1) {
+      testDayStart = day
+    }
     return val
   })
 
@@ -63,17 +68,20 @@ const run = async () => {
   const model = createModel()
   tfvis.show.modelSummary({ name: 'Model Summary' }, model)
   
-  const trainingData = averages.map((val, i) => ({
+  const mappedAverages = averages.map((val, i) => ({
     value: val,
     closingPrices: closingPrices[i]
   }))
 
-  const tensorData = convertToTensor(trainingData, windowSize)
-  const { xs, ys } = tensorData
+  const trainingData = mappedAverages.slice(0, trainingLength(mappedAverages))
+  const tesingData = mappedAverages.slice(trainingLength(mappedAverages))
 
-  await trainModel(model, xs, ys)
+  const trainingTensors = convertToTensor(trainingData, windowSize)
+  const testingTensors = convertToTensor(tesingData, windowSize)
 
-  testModel(model, values, tensorData, windowSize)
+  await trainModel(model, trainingTensors.xs, trainingTensors.ys)
+
+  testModel(model, values, testingTensors, windowSize, testingTensors.xs, testDayStart)
 }
 
 const createModel =() => {
@@ -81,6 +89,7 @@ const createModel =() => {
   // Closing prices should be in the input and an expected average for that perioud should be the output
   model.add(tf.layers.dense({ inputShape: [14], units: 20, useBias: true }))
   model.add(tf.layers.dense({ units: 30, activation: 'sigmoid' }))
+  model.add(tf.layers.dense({ units: 40, activation: 'sigmoid' }))
   model.add(tf.layers.dense({ units: 1, useBias: true }))
 
   return model
@@ -124,7 +133,6 @@ const trainModel = async (model, inputs, outputs) => {
   model.compile({
     optimizer: tf.train.adam(0.05),
     loss: tf.losses.meanSquaredError,
-    metrics: ['mse'],
   })
 
   const batchSize = 32
@@ -154,24 +162,17 @@ function generateInputs() {
   return inputs
 }
 
-function testModel(model, originalData, normalizationData, windowSize) {
-  const { xsMax, xsMin, ysMin, ysMax } = normalizationData
-  let day = 0
+function testModel(model, originalData, normalizationData, windowSize, testXS, day) {
+  const { ysMin, ysMax } = normalizationData
 
-  const [preds] = tf.tidy(() => {
-    const xs = tf.tensor2d(generateInputs())
-    
-    const preds = model.predict(xs)
-    
-    const unNormXs = xs
-      .mul(xsMax.sub(xsMin))
-      .add(xsMin)
+  const preds = tf.tidy(() => {    
+    const preds = model.predict(testXS)
 
     const unNormPreds = preds
       .mul(ysMax.sub(ysMin))
       .add(ysMin)
 
-    return [unNormXs.dataSync(), unNormPreds.dataSync()]
+    return unNormPreds.dataSync()
   })
   
   const predictedPoints = Array.from(preds).map(val => {
