@@ -87,9 +87,7 @@ const run = async () => {
 const createModel =() => {
   const model = tf.sequential()
   // Closing prices should be in the input and an expected average for that perioud should be the output
-  model.add(tf.layers.dense({ inputShape: [14], units: 20, useBias: true }))
-  model.add(tf.layers.dense({ units: 30, activation: 'sigmoid' }))
-  model.add(tf.layers.dense({ units: 40, activation: 'sigmoid' }))
+  model.add(tf.layers.dense({ inputShape: [14], units: 256, useBias: true }))
   model.add(tf.layers.dense({ units: 1, useBias: true }))
 
   return model
@@ -97,7 +95,8 @@ const createModel =() => {
 
 const convertToTensor = (data, windowSize) => 
   tf.tidy(() => {
-    tf.util.shuffle(data)
+    // Dont shuffle time series data?
+    // tf.util.shuffle(data)
 
     const xs = data
       .map(d => d.closingPrices)
@@ -131,7 +130,7 @@ const convertToTensor = (data, windowSize) =>
 
 const trainModel = async (model, inputs, outputs) => {
   model.compile({
-    optimizer: tf.train.adam(0.05),
+    optimizer: tf.train.adam(0.01),
     loss: tf.losses.meanSquaredError,
   })
 
