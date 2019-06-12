@@ -11,9 +11,9 @@ const app = express()
 app.use(cors())
 app.listen(PORT, () => console.log(`Listening on ${PORT}`))
 
-const getData = async () => {
+const getData = async symbol => {
   try {
-    const res = await axios.get(`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=MSFT&outputsize=full&apikey=${KEY}`)
+    const res = await axios.get(`https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=full&apikey=${KEY}`)
     return res
   } catch(err) {
     console.log(err)
@@ -35,12 +35,12 @@ const transformData = data => {
     .map(key => ({ Close: parseFloat(timeSeriesData[key]['4. close']) }))
 }
 
-app.get('/data', async (req, res) => {
+app.get('/data:symbol', async (req, res) => {
   // const data = await loadData()
   // res.status(200)
   //    .json(data)
 
-  const data = await getData()
+  const data = await getData(req.params.symbol)
   const transformedData = transformData(data.data)
   res.status(200)
      .json(transformedData)
