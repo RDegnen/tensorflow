@@ -48,7 +48,7 @@ const run = async () => {
       y: d,
     }
     day += windowSize
-    if (i === trainingLength(averages) - 1) {
+    if (i === Math.floor(trainingLength(averages) - 1)) {
       testDayStart = day
     }
     return val
@@ -65,7 +65,7 @@ const run = async () => {
     }
   )
 
-  const model = createModel()
+  const model = createModel(windowSize)
   tfvis.show.modelSummary({ name: 'Model Summary' }, model)
   
   const mappedAverages = averages.map((val, i) => ({
@@ -84,10 +84,10 @@ const run = async () => {
   testModel(model, values, testingTensors, windowSize, testingTensors.xs, testDayStart)
 }
 
-const createModel =() => {
+const createModel = windowSize => {
   const model = tf.sequential()
   // Closing prices should be in the input and an expected average for that perioud should be the output
-  model.add(tf.layers.dense({ inputShape: [14], units: 256, useBias: true }))
+  model.add(tf.layers.dense({ inputShape: [windowSize], units: 256, useBias: true }))
   model.add(tf.layers.dense({ units: 1, useBias: true }))
 
   return model
@@ -95,9 +95,6 @@ const createModel =() => {
 
 const convertToTensor = (data, windowSize) => 
   tf.tidy(() => {
-    // Dont shuffle time series data?
-    // tf.util.shuffle(data)
-
     const xs = data
       .map(d => d.closingPrices)
       .filter(cps => cps.length === windowSize)
@@ -147,18 +144,6 @@ const trainModel = async (model, inputs, outputs) => {
       { height: 200, callbacks: ['onEpochEnd'] },
     )
   })
-}
-
-function generateInputs() {
-  const inputs = []
-  for (let i = 0; i < 269; i++) {
-    const inputsArr = []
-    for (let i = 0; i < 14; i++) {
-      inputsArr.push(Math.random())
-    }
-    inputs.push(inputsArr)
-  }
-  return inputs
 }
 
 function testModel(model, originalData, normalizationData, windowSize, testXS, day) {

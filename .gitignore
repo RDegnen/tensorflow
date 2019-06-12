@@ -1,4 +1,6 @@
 /tensorflow-SP/data.json
 /tensorflow-SP/^GSPC.csv
 /tensorflow-SP/node_modules
+/tensorflow-SP/.env
+
 /tensorflow-node/node_modules
